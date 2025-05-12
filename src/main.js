@@ -4,110 +4,192 @@ const dogImage = document.getElementById('dog-image');
 const optionsContainer = document.getElementById('options');
 const result = document.getElementById('result');
 const nextDogBtn = document.getElementById('next-dog-btn');
+const breedSelect = document.getElementById('breed-select');
+const galleryContainer = document.getElementById('gallery-container');
+const navButtons = document.querySelectorAll('.nav-btn');
 
 let correctBreed = "";
+let allBreeds = [];
 
-async function getRandomDog() {
-  // Reset content
-  result.textContent = "";
-  optionsContainer.innerHTML = "Loading...";
-  let imageURL = "";
-
-  // Make API call
+// API Functions
+async function fetchWithErrorHandling(url) {
   try {
-    const response = await fetch("https://dog.ceo/api/breeds/image/random");
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
-
-    const data = await response.json();
-    imageURL = data.message;
-    console.log(data);  
+    return await response.json();
   } catch (err) {
-    console.error("Error fetching data:", err);
+    console.error(`Error fetching ${url}:`, err);
+    throw err;
   }
-
-  // Set new image
-  if (dogImage) {
-    dogImage.src = imageURL;
-  } else {
-    console.error("Error: dogImage element not found!");
-    return;
-  }
-
-
-  // Extract breed form URL
-  correctBreed = getBreedFromURL(imageURL)
-
-  // Fetch other breeds and render options
-  await fetchBreedOptions(correctBreed);
 }
 
-function getBreedFromURL(url) {
-  // Break url into portions
-  const portions = url.split("/");
-
-  // Get the breed
-  const breed = portions[portions.indexOf("breeds") + 1];
-
-  // Handle multiple breeds
-  if (breed.includes("-")) {
-    return breed.split("-")[0];
-  }
-
-  return breed;
+async function getAllBreeds() {
+  const data = await fetchWithErrorHandling("https://dog.ceo/api/breeds/list/all");
+  return Object.keys(data.message);
 }
 
-async function fetchBreedOptions(correctBreed) {
-  let allBreeds = [];
-
-  // Fetch other breeds
+async function getRandomDog() {
   try {
-    const response = await fetch("https://dog.ceo/api/breeds/list/all");
-    const data = await response.json();
-    allBreeds = Object.keys(data.message);
-    console.log(data);
+    // Reset content and show loading state
+    result.textContent = "";
+    optionsContainer.innerHTML = "<p>Loading...</p>";
+    dogImage.src = "";
+    dogImage.alt = "Loading...";
+
+    // Fetch random dog image
+    const data = await fetchWithErrorHandling("https://dog.ceo/api/breeds/image/random");
+    const imageURL = data.message;
+
+    // Update image and get breed options
+    dogImage.src = imageURL;
+    dogImage.alt = "Random Dog";
+    correctBreed = getBreedFromURL(imageURL);
+    await displayBreedOptions(correctBreed);
+
   } catch (err) {
-    console.error("Error fetching data:", err);
+    optionsContainer.innerHTML = `<p class="error">Failed to load dog image. Please try again.</p>`;
+    result.textContent = "";
   }
+}
 
-  // Get breeds
-  const options = new Set([correctBreed]);
-  while (options.size < 4) {
-    const randomBreed = allBreeds[Math.floor(Math.random() * allBreeds.length)];
-    options.add(randomBreed);
+async function getBreedImages(breed, limit = 8) {
+  const data = await fetchWithErrorHandling(`https://dog.ceo/api/breed/${breed}/images`);
+  return data.message.slice(0, limit);
+}
+
+// Helper Functions
+function getBreedFromURL(url) {
+  const portions = url.split("/");
+  const breed = portions[portions.indexOf("breeds") + 1];
+  return breed.includes("-") ? breed.split("-")[0] : breed;
+}
+
+async function displayBreedOptions(correctBreed) {
+  try {
+    if (!allBreeds.length) {
+      allBreeds = await getAllBreeds();
+    }
+
+    const options = new Set([correctBreed]);
+    while (options.size < 4) {
+      const randomBreed = allBreeds[Math.floor(Math.random() * allBreeds.length)];
+      options.add(randomBreed);
+    }
+
+    displayOptions(Array.from(options));
+  } catch (err) {
+    optionsContainer.innerHTML = `<p class="error">Failed to load breed options. Please try again.</p>`;
   }
-
-  // Render options
-  displayOptions()
-} 
+}
 
 function displayOptions(options) {
-  // Reset options container and shuffle breed options
   optionsContainer.innerHTML = "";
   options.sort(() => Math.random() - 0.5);
 
-  // Create and define a button for each breed
   options.forEach(breed => {
     const button = document.createElement("button");
     button.textContent = breed;
-    button.onclick = () => checkAnswer(breed); // Run answer checker on click
+    button.onclick = () => checkAnswer(breed);
     optionsContainer.appendChild(button);
   });
 }
 
 function checkAnswer(chosenBreed) {
-  if (chosenBreed === correctBreed) {
-    result.textContent = "🎉 Correct!";
-    result.style.color = "green";
-  } else {
-    result.textContent = "❌ Try again!";
-    result.style.color = "red";
+  const isCorrect = chosenBreed === correctBreed;
+  
+  // Set result text
+  result.textContent = isCorrect 
+    ? "🎉 Correct!" 
+    : `❌ Wrong! The correct breed was ${correctBreed}`;
+  
+  // Get all buttons
+  const buttons = optionsContainer.querySelectorAll('button');
+  
+  // Change button colors and disable all buttons
+  buttons.forEach(btn => {
+    // Disable the button
+    btn.disabled = true;
+    
+    if (btn.textContent === chosenBreed) {
+      // Change color of selected button based on correctness
+      btn.style.backgroundColor = isCorrect ? '#28a745' : '#dc3545';
+      btn.style.color = 'white';
+    } else if (btn.textContent === correctBreed && !isCorrect) {
+      // Highlight the correct answer if user selected wrong
+      btn.style.borderColor = '#28a745';
+      btn.style.borderWidth = '3px';
+    }
+  });
+}
+
+async function initializeBreedSelect() {
+  try {
+    if (!allBreeds.length) {
+      allBreeds = await getAllBreeds();
+    }
+
+    breedSelect.innerHTML = `
+      <option value="">Select a breed...</option>
+      ${allBreeds.map(breed => `<option value="${breed}">${breed}</option>`).join('')}
+    `;
+  } catch (err) {
+    breedSelect.innerHTML = `<option value="">Error loading breeds</option>`;
   }
 }
 
-// Load new dog when "Next Dog" button is clicked
+async function displayBreedGallery(breed) {
+  try {
+    galleryContainer.innerHTML = '<p>Loading...</p>';
+    const images = await getBreedImages(breed);
+    
+    galleryContainer.innerHTML = images.map(url => `
+      <div class="gallery-item">
+        <img src="${url}" alt="${breed} dog" loading="lazy">
+      </div>
+    `).join('');
+  } catch (err) {
+    galleryContainer.innerHTML = `<p class="error">Failed to load images for ${breed}. Please try again.</p>`;
+  }
+}
+
+// Navigation
+function showPage(pageId) {
+  document.querySelectorAll('.page').forEach(page => {
+    page.classList.toggle('active', page.id === pageId);
+  });
+
+  navButtons.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.page === pageId.replace('-page', ''));
+  });
+}
+
+// Event Listeners
 nextDogBtn.addEventListener("click", getRandomDog);
 
-// Load a random dog on page load
+breedSelect.addEventListener('change', (e) => {
+  if (e.target.value) {
+    displayBreedGallery(e.target.value);
+  } else {
+    galleryContainer.innerHTML = '';
+  }
+});
+
+navButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const pageId = `${btn.dataset.page}-page`;
+    showPage(pageId);
+
+    // Initialize page content if needed
+    if (pageId === 'gallery-page' && !breedSelect.options.length) {
+      initializeBreedSelect();
+    } else if (pageId === 'game-page' && !dogImage.src) {
+      getRandomDog();
+    }
+  });
+});
+
+// Initialize app
 getRandomDog();
+initializeBreedSelect(); // Initialize breed select dropdown on page load
